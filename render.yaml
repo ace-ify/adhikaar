@@ -1,0 +1,17 @@
+services:
+  - type: worker
+    name: adhikaar-voice-agent
+    runtime: docker
+    repo: https://github.com/<your-username>/adhikaar
+    dockerfilePath: ./agent/Dockerfile
+    dockerContext: ./agent
+    plan: free
+    envVars:
+      - key: LIVEKIT_URL
+        sync: false
+      - key: LIVEKIT_API_KEY
+        sync: false
+      - key: LIVEKIT_API_SECRET
+        sync: false
+      - key: GOOGLE_API_KEY
+        sync: false
