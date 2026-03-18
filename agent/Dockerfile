@@ -9,12 +9,12 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 WORKDIR /app
 
-# Install Python deps
+# Copy source FIRST (setuptools needs src/ to find packages)
 COPY pyproject.toml ./
+COPY src/ ./src/
+
+# Install Python deps (src/ must exist for pip install to find packages)
 RUN pip install --no-cache-dir . && \
     playwright install chromium
-
-# Copy source (includes src/data/schemes.json)
-COPY src/ ./src/
 
 CMD ["python", "src/agent.py", "start"]

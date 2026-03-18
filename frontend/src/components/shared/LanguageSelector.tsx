@@ -19,7 +19,7 @@ export default function LanguageSelector({
 }: LanguageSelectorProps) {
   const [isOpen, setIsOpen] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
-  const languages: SupportedLanguage[] = ["en", "hi"];
+  const languages: SupportedLanguage[] = ["en", "hi", "ta", "te", "bn", "mr", "gu", "kn", "ml", "pa", "or"];
 
   // Close dropdown when clicking outside
   useEffect(() => {
@@ -62,7 +62,7 @@ export default function LanguageSelector({
             {/* Popover Tip */}
             <div className="absolute -top-1 left-1/2 -translate-x-1/2 w-3 h-3 bg-card border-l border-t border-white/[0.08] rotate-45 rounded-tl-sm" />
             
-            <div className="relative bg-card border border-white/[0.08] rounded-2xl shadow-2xl p-1.5 overflow-hidden backdrop-blur-xl">
+            <div className="relative bg-card border border-white/[0.08] rounded-2xl shadow-2xl p-1.5 backdrop-blur-xl max-h-[320px] overflow-y-auto scrollbar-thin scrollbar-thumb-white/10">
               {languages.map((lang) => (
                 <button
                   key={lang}

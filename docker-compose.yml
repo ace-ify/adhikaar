@@ -7,6 +7,12 @@ services:
       - "3000:3000"
     env_file:
       - ./frontend/.env.local
+    environment:
+      - EVOLUTION_API_URL=http://evolution-api:8000
+      - EVOLUTION_API_KEY=adhikaar-evo-secret-key
+      - EVOLUTION_INSTANCE_NAME=adhikaar-whatsapp
+    depends_on:
+      - evolution-api
     restart: unless-stopped
 
   agent:
@@ -16,3 +22,65 @@ services:
     env_file:
       - ./agent/.env.local
     restart: unless-stopped
+
+  # ── WhatsApp Integration via Evolution API ──
+  evolution-api:
+    image: evolution-api:v2.3.7-local
+    ports:
+      - "8000:8080"
+    environment:
+      - SERVER_URL=http://localhost:8000
+      - SERVER_PORT=8080
+      - AUTHENTICATION_API_KEY=adhikaar-evo-secret-key
+      - AUTHENTICATION_EXPOSE_IN_FETCH_INSTANCES=false
+      - DATABASE_PROVIDER=postgresql
+      - DATABASE_CONNECTION_URI=postgresql://adhikaar:adhikaar_db_pass@evolution-postgres:5432/evolution
+      - DATABASE_CONNECTION_CLIENT_NAME=evolution
+      - CACHE_REDIS_ENABLED=true
+      - CACHE_REDIS_URI=redis://evolution-redis:6379/0
+      - CACHE_REDIS_PREFIX_KEY=evolution
+      - CACHE_LOCAL_ENABLED=false
+      - LOG_LEVEL=ERROR,WARN,DEBUG,INFO,LOG,VERBOSE,WEBHOOKS
+      - LOG_BAILEYS=error
+      - LANGUAGE=en
+      # Webhook — Evolution API sends incoming WhatsApp messages here
+      - WEBHOOK_GLOBAL_URL=http://host.docker.internal:3000/api/whatsapp/webhook
+      - WEBHOOK_GLOBAL_ENABLED=true
+      - WEBHOOK_GLOBAL_WEBHOOK_BY_EVENTS=false
+      - WEBHOOK_EVENTS_MESSAGES_UPSERT=true
+    depends_on:
+      evolution-postgres:
+        condition: service_healthy
+      evolution-redis:
+        condition: service_healthy
+    restart: unless-stopped
+
+  evolution-postgres:
+    image: postgres:15-alpine
+    environment:
+      - POSTGRES_USER=adhikaar
+      - POSTGRES_PASSWORD=adhikaar_db_pass
+      - POSTGRES_DB=evolution
+    volumes:
+      - evolution_pg_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U adhikaar -d evolution"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+    restart: unless-stopped
+
+  evolution-redis:
+    image: redis:7-alpine
+    volumes:
+      - evolution_redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+    restart: unless-stopped
+
+volumes:
+  evolution_pg_data:
+  evolution_redis_data:

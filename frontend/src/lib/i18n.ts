@@ -1,4 +1,6 @@
-export const TRANSLATIONS = {
+import type { SupportedLanguage } from "./types";
+
+const _TRANSLATIONS = {
   en: {
     sidebar: {
       newChat: "New chat",
@@ -65,4 +67,25 @@ export const TRANSLATIONS = {
   },
 };
 
-export type TranslationKey = typeof TRANSLATIONS.en;
+export type TranslationKey = typeof _TRANSLATIONS.en;
+
+/**
+ * Get translations for a language.
+ * Falls back to Hindi for Devanagari-script languages (mr),
+ * and to English for all others.
+ *
+ * The LLM handles all 11 languages for conversation text —
+ * this is only for UI chrome (sidebar labels, button text, placeholders).
+ */
+export function getTranslation(lang: SupportedLanguage): TranslationKey {
+  if (lang in _TRANSLATIONS) {
+    return _TRANSLATIONS[lang as keyof typeof _TRANSLATIONS];
+  }
+  // Marathi also uses Devanagari — fall back to Hindi
+  if (lang === "mr") return _TRANSLATIONS.hi;
+  // All other languages fall back to English
+  return _TRANSLATIONS.en;
+}
+
+/** @deprecated Use getTranslation(lang) instead for type-safe access */
+export const TRANSLATIONS = _TRANSLATIONS;

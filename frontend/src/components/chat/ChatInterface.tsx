@@ -14,12 +14,15 @@ import {
   Phone,
   Paperclip,
   Users,
+  Shield,
+  X,
+  Eye,
 } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import { cn } from "@/lib/utils";
 import type { SupportedLanguage, ChatMessage } from "@/lib/types";
 import { saveApplication, createApplicationFromResult } from "@/lib/applications";
-import { TRANSLATIONS } from "@/lib/i18n";
+import { getTranslation } from "@/lib/i18n";
 import LanguageSelector from "@/components/shared/LanguageSelector";
 import ChatSidebar, { type ChatSession } from "./ChatSidebar";
 import VoiceCall from "./VoiceCall";
@@ -51,7 +54,7 @@ function saveSessions(
 
 function generateTitle(msgs: ChatMessage[], lang: SupportedLanguage): string {
   const first = msgs.find((m) => m.role === "user");
-  if (!first) return TRANSLATIONS[lang].sidebar.newChat;
+  if (!first) return getTranslation(lang).sidebar.newChat;
   const text = first.content.slice(0, 40);
   return text.length < first.content.length ? text + "…" : text;
 }
@@ -287,24 +290,70 @@ function ApplyButton({
   data: { schemeId: string; schemeName: string; citizenData?: Record<string, string>; benefit?: string };
   language: SupportedLanguage;
 }) {
-  const [status, setStatus] = useState<"idle" | "applying" | "success" | "error">("idle");
+  const [status, setStatus] = useState<"idle" | "filling" | "reviewing" | "submitting" | "success" | "error">("idle");
   const [refNumber, setRefNumber] = useState<string | null>(null);
+  const [reviewData, setReviewData] = useState<{
+    screenshot_base64?: string;
+    filled_fields?: { field: string; value: string; isCaptcha?: boolean; selector?: string; type?: string }[];
+    has_captcha?: boolean;
+    captcha_fields?: { selector: string }[];
+    session_id?: string;
+  } | null>(null);
+  const [captchaValue, setCaptchaValue] = useState("");
+  const [acceptDeclaration, setAcceptDeclaration] = useState(false);
+  const sessionIdRef = useRef<string>(`chat-${Date.now()}`);
 
   const handleApply = async () => {
-    setStatus("applying");
+    setStatus("filling");
     try {
-      const res = await fetch("/api/automate", {
+      const res = await fetch("/api/automate/review", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ citizenData: data.citizenData || {} }),
+        body: JSON.stringify({
+          citizenData: data.citizenData || {},
+          sessionId: sessionIdRef.current,
+        }),
       });
       const result = await res.json();
-      if (result.status === "success") {
+
+      if (result.status === "error" || result.status === "simulated") {
+        // Fall back to direct (non-review) mode for Vercel/simulated
+        setStatus("error");
+        return;
+      }
+
+      // Show the review panel
+      setReviewData({
+        ...result,
+        session_id: sessionIdRef.current,
+      });
+      setStatus("reviewing");
+    } catch {
+      setStatus("error");
+    }
+  };
+
+  const handleConfirm = async () => {
+    setStatus("submitting");
+    try {
+      const captchaSelector = reviewData?.captcha_fields?.[0]?.selector || "";
+      const res = await fetch("/api/automate/confirm", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          sessionId: sessionIdRef.current,
+          action: "submit",
+          captcha_value: captchaValue,
+          captcha_selector: captchaSelector,
+          accept_declaration: acceptDeclaration,
+        }),
+      });
+      const result = await res.json();
+      if (result.status === "confirmed") {
         setStatus("success");
-        const ref = result.output?.match(/Reference Number: (.+)/)?.[1] || "ADH-" + Date.now().toString(36).toUpperCase();
+        const ref = "ADH-" + Date.now().toString(36).toUpperCase();
         setRefNumber(ref);
 
-        // Save to application store so dashboard reflects this
         const app = createApplicationFromResult(
           data.schemeName,
           ref,
@@ -318,6 +367,25 @@ function ApplyButton({
     } catch {
       setStatus("error");
     }
+  };
+
+  const handleCancel = async () => {
+    try {
+      await fetch("/api/automate/confirm", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          sessionId: sessionIdRef.current,
+          action: "cancel",
+        }),
+      });
+    } catch {
+      // ignore
+    }
+    setReviewData(null);
+    setStatus("idle");
+    setCaptchaValue("");
+    setAcceptDeclaration(false);
   };
 
   if (status === "success") {
@@ -355,18 +423,152 @@ function ApplyButton({
     );
   }
 
+  // ── REVIEW PANEL ──
+  if (status === "reviewing" && reviewData) {
+    const fields = (reviewData.filled_fields || []).filter((f) => !f.isCaptcha);
+
+    return (
+      <motion.div
+        initial={{ opacity: 0, y: 12 }}
+        animate={{ opacity: 1, y: 0 }}
+        className="mt-4 rounded-2xl border border-purple-500/20 bg-gradient-to-b from-purple-500/5 to-transparent overflow-hidden"
+      >
+        {/* Header */}
+        <div className="flex items-center justify-between px-4 py-3 border-b border-white/[0.06]">
+          <div className="flex items-center gap-2 text-sm font-semibold text-purple-400">
+            <Shield className="w-4 h-4" />
+            {language === "hi" ? "फॉर्म समीक्षा" : "Form Review"}
+          </div>
+          <button
+            onClick={handleCancel}
+            className="p-1 rounded-md text-muted-foreground/40 hover:text-red-400 hover:bg-red-500/10 transition-all"
+          >
+            <X className="w-4 h-4" />
+          </button>
+        </div>
+
+        {/* Screenshot */}
+        {reviewData.screenshot_base64 && (
+          <div className="px-4 pt-3">
+            <div className="relative rounded-xl overflow-hidden border border-white/[0.06] group cursor-pointer">
+              <img
+                src={`data:image/png;base64,${reviewData.screenshot_base64}`}
+                alt="Form screenshot"
+                className="w-full h-auto max-h-[300px] object-contain bg-white"
+              />
+              <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
+                <Eye className="w-6 h-6 text-white" />
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Filled fields table */}
+        {fields.length > 0 && (
+          <div className="px-4 pt-3">
+            <div className="text-xs font-semibold text-foreground/60 mb-2 uppercase tracking-wider">
+              {language === "hi" ? "भरे गए फ़ील्ड" : "Filled Fields"}
+            </div>
+            <div className="space-y-1 max-h-[200px] overflow-y-auto pr-2">
+              {fields.map((field, i) => (
+                <div
+                  key={i}
+                  className="flex justify-between items-baseline gap-3 text-xs py-1 border-b border-white/[0.03] last:border-0"
+                >
+                  <span className="text-muted-foreground/50 truncate flex-shrink-0 max-w-[45%]">
+                    {field.field || "—"}
+                  </span>
+                  <span className="text-foreground/80 font-mono text-right truncate">
+                    {field.value || "—"}
+                  </span>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* Captcha input */}
+        {reviewData.has_captcha && (
+          <div className="px-4 pt-3">
+            <label className="block text-xs font-semibold text-foreground/60 mb-1.5 uppercase tracking-wider">
+              {language === "hi" ? "कैप्चा दर्ज करें" : "Enter Captcha"}
+            </label>
+            <input
+              type="text"
+              value={captchaValue}
+              onChange={(e) => setCaptchaValue(e.target.value)}
+              placeholder={language === "hi" ? "स्क्रीनशॉट में दिखाया गया कैप्चा टाइप करें" : "Type the captcha shown in the screenshot"}
+              className="w-full px-3 py-2 rounded-lg bg-white/[0.05] border border-white/[0.08] text-sm text-foreground placeholder:text-muted-foreground/30 focus:outline-none focus:border-purple-500/40 transition-colors"
+            />
+          </div>
+        )}
+
+        {/* Declaration checkbox */}
+        <div className="px-4 pt-3">
+          <label className="flex items-start gap-2 cursor-pointer group">
+            <input
+              type="checkbox"
+              checked={acceptDeclaration}
+              onChange={(e) => setAcceptDeclaration(e.target.checked)}
+              className="mt-0.5 accent-purple-500"
+            />
+            <span className="text-xs text-muted-foreground/60 group-hover:text-muted-foreground/80 transition-colors leading-relaxed">
+              {language === "hi"
+                ? "मैंने सभी जानकारी की समीक्षा कर ली है और यह सही है। मैं फॉर्म जमा करने के लिए सहमत हूं।"
+                : "I have reviewed all the information and it is correct. I consent to submitting this form."}
+            </span>
+          </label>
+        </div>
+
+        {/* Confirm/Cancel buttons */}
+        <div className="flex gap-2 px-4 py-4">
+          <button
+            onClick={handleConfirm}
+            disabled={!acceptDeclaration || (reviewData.has_captcha && !captchaValue.trim())}
+            className="flex-1 flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl bg-gradient-to-r from-emerald-600 to-green-600 hover:from-emerald-500 hover:to-green-500 text-white font-semibold text-sm transition-all shadow-lg shadow-emerald-500/20 disabled:opacity-40 disabled:cursor-not-allowed"
+          >
+            <Check className="w-4 h-4" />
+            {language === "hi" ? "जमा करें" : "Submit"}
+          </button>
+          <button
+            onClick={handleCancel}
+            className="flex-1 flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl border border-white/[0.08] hover:bg-red-500/10 hover:border-red-500/20 text-muted-foreground hover:text-red-400 font-medium text-sm transition-all"
+          >
+            <X className="w-4 h-4" />
+            {language === "hi" ? "रद्द करें" : "Cancel"}
+          </button>
+        </div>
+      </motion.div>
+    );
+  }
+
+  // ── SUBMITTING STATE ──
+  if (status === "submitting") {
+    return (
+      <motion.div
+        initial={{ opacity: 0 }}
+        animate={{ opacity: 1 }}
+        className="mt-4 flex items-center gap-3 px-5 py-3 rounded-xl border border-purple-500/20 bg-purple-500/5 text-sm text-purple-400"
+      >
+        <Loader2 className="w-4 h-4 animate-spin" />
+        {language === "hi" ? "फॉर्म जमा हो रहा है..." : "Submitting the form..."}
+      </motion.div>
+    );
+  }
+
+  // ── DEFAULT: Apply / Filling button ──
   return (
     <motion.button
       initial={{ opacity: 0, y: 8 }}
       animate={{ opacity: 1, y: 0 }}
       onClick={handleApply}
-      disabled={status === "applying"}
+      disabled={status === "filling"}
       className="mt-4 flex items-center gap-3 px-5 py-3 rounded-xl bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 text-white font-semibold text-sm transition-all shadow-lg shadow-purple-500/20 disabled:opacity-60"
     >
-      {status === "applying" ? (
+      {status === "filling" ? (
         <>
           <Loader2 className="w-4 h-4 animate-spin" />
-          {language === "hi" ? "आवेदन भरा जा रहा है..." : "Filling application form..."}
+          {language === "hi" ? "फॉर्म भरा जा रहा है..." : "Filling form for review..."}
         </>
       ) : (
         <>
@@ -452,7 +654,7 @@ export default function ChatInterface() {
     const id = Date.now().toString();
     const session: ChatSession = {
       id,
-      title: TRANSLATIONS[language].sidebar.newChat,
+      title: getTranslation(language).sidebar.newChat,
       updatedAt: Date.now(),
     };
     setSessions((prev) => [session, ...prev]);
@@ -546,7 +748,7 @@ export default function ChatInterface() {
       const errorMsg: ChatMessage = {
         id: (Date.now() + 1).toString(),
         role: "assistant",
-        content: TRANSLATIONS[language].chat.errorMessage,
+        content: getTranslation(language).chat.errorMessage,
         timestamp: new Date(),
       };
       setMessages((prev) => [...prev, errorMsg]);
@@ -676,7 +878,7 @@ export default function ChatInterface() {
     }
   }
 
-  const t = TRANSLATIONS[language].chat;
+  const t = getTranslation(language).chat;
 
   const SUGGESTED_PROMPTS = [
     {

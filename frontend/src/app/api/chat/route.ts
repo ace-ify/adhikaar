@@ -135,10 +135,22 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    const langInstruction =
-      language === "hi"
-        ? "\n\nIMPORTANT: Respond in Hindi (Devanagari script). Use simple Hindi that everyone can understand. Ensure any scheme name (name) or benefit description (benefit) inside [SCHEME_CARD] tags is also translated into Hindi."
-        : "\n\nIMPORTANT: Respond in simple English. Ensure all [SCHEME_CARD] tags use English contents.";
+    const langNames: Record<string, string> = {
+      hi: "Hindi (Devanagari script)",
+      ta: "Tamil (தமிழ் script)",
+      te: "Telugu (తెలుగు script)",
+      bn: "Bengali (বাংলা script)",
+      mr: "Marathi (Devanagari script)",
+      gu: "Gujarati (ગુજરાતી script)",
+      kn: "Kannada (ಕನ್ನಡ script)",
+      ml: "Malayalam (മലയാളം script)",
+      pa: "Punjabi (Gurmukhi script)",
+      or: "Odia (ଓଡ଼ିଆ script)",
+    };
+
+    const langInstruction = language === "en"
+      ? "\n\nIMPORTANT: Respond in simple English. Ensure all [SCHEME_CARD] tags use English contents."
+      : `\n\nIMPORTANT: Respond in ${langNames[language] || "Hindi (Devanagari script)"}. Use simple language that everyone can understand. Ensure any scheme name (name) or benefit description (benefit) inside [SCHEME_CARD] tags is also translated.`;
 
     const systemPrompt = WELFARE_AGENT_PROMPT + langInstruction;
 

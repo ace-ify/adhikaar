@@ -75,7 +75,7 @@ export interface ChatMessage {
   timestamp: Date;
   schemes?: SchemeMatch[];
   documents?: string[];
-  language?: "en" | "hi" | "ta";
+  language?: SupportedLanguage;
 }
 
 export interface Application {
@@ -111,11 +111,35 @@ export interface UploadedDocument {
   verified: boolean;
 }
 
-export type SupportedLanguage = "en" | "hi";
+export type SupportedLanguage = "en" | "hi" | "ta" | "te" | "bn" | "mr" | "gu" | "kn" | "ml" | "pa" | "or";
 
 export const LANGUAGE_LABELS: Record<SupportedLanguage, string> = {
   en: "English",
   hi: "हिन्दी",
+  ta: "தமிழ்",
+  te: "తెలుగు",
+  bn: "বাংলা",
+  mr: "मराठी",
+  gu: "ગુજરાતી",
+  kn: "ಕನ್ನಡ",
+  ml: "മലയാളം",
+  pa: "ਪੰਜਾਬੀ",
+  or: "ଓଡ଼ିଆ",
+};
+
+/** Sarvam AI language codes for STT/TTS */
+export const SARVAM_LANG_CODES: Record<SupportedLanguage, string> = {
+  en: "en-IN",
+  hi: "hi-IN",
+  ta: "ta-IN",
+  te: "te-IN",
+  bn: "bn-IN",
+  mr: "mr-IN",
+  gu: "gu-IN",
+  kn: "kn-IN",
+  ml: "ml-IN",
+  pa: "pa-IN",
+  or: "or-IN",
 };
 
 export const INDIAN_STATES = [

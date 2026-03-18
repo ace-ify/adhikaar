@@ -13,7 +13,7 @@ import {
 import { motion, AnimatePresence } from "framer-motion";
 import { cn } from "@/lib/utils";
 import Link from "next/link";
-import { TRANSLATIONS } from "@/lib/i18n";
+import { getTranslation } from "@/lib/i18n";
 import { SupportedLanguage } from "@/lib/types";
 
 export interface ChatSession {
@@ -37,7 +37,7 @@ function timeLabel(ts: number, lang: SupportedLanguage): string {
   const now = Date.now();
   const diff = now - ts;
   const day = 86_400_000;
-  const t = TRANSLATIONS[lang].sidebar;
+  const t = getTranslation(lang).sidebar;
 
   if (diff < day) return t.today;
   if (diff < day * 2) return t.yesterday;
@@ -58,7 +58,7 @@ export default function ChatSidebar({
   const [search, setSearch] = useState("");
   const [hoveredId, setHoveredId] = useState<string | null>(null);
 
-  const t = TRANSLATIONS[language].sidebar;
+  const t = getTranslation(language).sidebar;
 
   const filtered = sessions.filter((s) =>
     s.title.toLowerCase().includes(search.toLowerCase())

@@ -12,18 +12,28 @@ function isValidUrl(str: string): boolean {
   }
 }
 
+/**
+ * POST /api/automate
+ *
+ * Legacy non-HITL endpoint. Runs smart_fill.py without review mode.
+ * For the recommended HITL flow, use POST /api/automate/review instead.
+ */
 export async function POST(req: NextRequest) {
   try {
     // Vercel / serverless environments don't have Python — return early
     if (process.env.VERCEL) {
       return NextResponse.json({
         status: "simulated",
-        message: "Automation is only available in local/Docker mode. On Vercel, the voice agent handles form filling directly.",
+        message:
+          "Automation is only available in local/Docker mode. On Vercel, the voice agent handles form filling directly.",
       });
     }
 
     // Rate limit: 5 automation requests per minute per IP
-    const limited = rateLimit(getRateLimitKey(req, "automate"), { maxRequests: 5, windowMs: 60_000 });
+    const limited = rateLimit(getRateLimitKey(req, "automate"), {
+      maxRequests: 5,
+      windowMs: 60_000,
+    });
     if (limited) {
       return NextResponse.json(
         { error: "Too many requests. Please wait before trying again." },
@@ -31,7 +41,7 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    const { citizenData, portalUrl, useSmartFill = true } = await req.json();
+    const { citizenData, portalUrl } = await req.json();
 
     // Validate portalUrl to prevent command injection
     if (portalUrl && !isValidUrl(portalUrl)) {
@@ -41,27 +51,22 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    // Use AI-powered smart_fill.py by default, fall back to hardcoded fill_form.py
-    const scriptName = useSmartFill ? "smart_fill.py" : "fill_form.py";
+    // Always use AI-powered smart_fill.py
     const scriptPath = path.resolve(
       process.cwd(),
       "..",
       "automation",
-      scriptName
+      "smart_fill.py"
     );
 
     const citizenJson = JSON.stringify(citizenData || {});
-    // Escape for shell — use base64 to avoid quote issues
     const base64Data = Buffer.from(citizenJson).toString("base64");
 
     // Build command: decode base64 in Python to avoid shell escaping issues
-    // portalUrl is validated above — safe to interpolate
-    const portalArg = portalUrl ? ` "${portalUrl}"` : "";
-    const cmd = useSmartFill
-      ? `python -c "import sys,base64,json,asyncio;sys.path.insert(0,r'${path.dirname(scriptPath)}');from smart_fill import smart_fill_form;d=json.loads(base64.b64decode('${base64Data}'));asyncio.run(smart_fill_form(d${portalUrl ? ",'" + portalUrl + "'" : ""}))"`
-      : `python "${scriptPath}" '${citizenJson}'${portalArg}`;
+    const portalUrlArg = portalUrl ? `,'${portalUrl}'` : "";
+    const cmd = `python -c "import sys,base64,json,asyncio;sys.path.insert(0,r'${path.dirname(scriptPath)}');from smart_fill import smart_fill_form;d=json.loads(base64.b64decode('${base64Data}'));asyncio.run(smart_fill_form(d${portalUrlArg}))"`;
 
-    console.log(`[Adhikaar] Starting ${scriptName} automation...`);
+    console.log("[Adhikaar] Starting smart_fill.py automation (non-review mode)...");
 
     return new Promise<NextResponse>((resolve) => {
       exec(
@@ -75,49 +80,12 @@ export async function POST(req: NextRequest) {
             console.error("Automation error:", error.message);
             console.error("stderr:", stderr);
 
-            // If smart_fill failed, try fallback to fill_form.py
-            if (useSmartFill) {
-              console.log("[Adhikaar] Smart fill failed, trying basic fill_form.py...");
-              const fallbackPath = path.resolve(
-                process.cwd(),
-                "..",
-                "automation",
-                "fill_form.py"
-              );
-              exec(
-                `python "${fallbackPath}" '${citizenJson}'`,
-                { timeout: 120000, env: { ...process.env } },
-                (err2, out2, serr2) => {
-                  if (err2) {
-                    resolve(
-                      NextResponse.json(
-                        {
-                          status: "error",
-                          message: "Automation failed",
-                        },
-                        { status: 500 }
-                      )
-                    );
-                  } else {
-                    resolve(
-                      NextResponse.json({
-                        status: "success",
-                        message: "Application submitted (basic mode)",
-                        output: out2,
-                        mode: "fallback",
-                      })
-                    );
-                  }
-                }
-              );
-              return;
-            }
-
             resolve(
               NextResponse.json(
                 {
                   status: "error",
                   message: "Automation failed",
+                  output: stdout?.slice(-500),
                 },
                 { status: 500 }
               )
@@ -130,7 +98,7 @@ export async function POST(req: NextRequest) {
               status: "success",
               message: "Application submitted successfully",
               output: stdout,
-              mode: useSmartFill ? "ai-powered" : "basic",
+              mode: "ai-powered",
             })
           );
         }

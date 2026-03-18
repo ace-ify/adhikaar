@@ -6,6 +6,7 @@ import {
   useVoiceAssistant,
   useChat,
   useLocalParticipant,
+  useRoomContext,
   RoomAudioRenderer,
 } from "@livekit/components-react";
 import {
@@ -21,6 +22,8 @@ import {
   X,
   CheckCircle2,
   Paperclip,
+  ShieldCheck,
+  XCircle,
 } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import { cn } from "@/lib/utils";
@@ -33,6 +36,117 @@ interface VoiceCallProps {
   language: SupportedLanguage;
 }
 
+/** Review data received from agent via LiveKit data channel */
+interface ReviewData {
+  type: "REVIEW_REQUEST";
+  sessionId: string;
+  fields: Record<string, string>;
+  portalUrl?: string;
+  screenshot?: string; // base64-encoded PNG
+}
+
+/* ── HITL Review Panel (voice flow) ─────────────────────── */
+
+function VoiceReviewPanel({
+  review,
+  language,
+  onConfirm,
+  onCancel,
+}: {
+  review: ReviewData;
+  language: SupportedLanguage;
+  onConfirm: (captcha: string) => void;
+  onCancel: () => void;
+}) {
+  const [captchaValue, setCaptchaValue] = useState("");
+
+  return (
+    <motion.div
+      initial={{ opacity: 0, y: 20 }}
+      animate={{ opacity: 1, y: 0 }}
+      exit={{ opacity: 0, y: 20 }}
+      className="absolute inset-x-2 bottom-20 z-50 rounded-2xl border border-white/[0.08] bg-[rgba(12,12,24,0.95)] backdrop-blur-xl p-4 max-h-[70vh] overflow-y-auto"
+    >
+      <div className="flex items-center justify-between mb-3">
+        <h3 className="text-sm font-semibold text-white flex items-center gap-2">
+          <ShieldCheck className="w-4 h-4 text-amber-400" />
+          {language === "hi" ? "फॉर्म की समीक्षा करें" : "Review Filled Form"}
+        </h3>
+        <button onClick={onCancel} className="text-white/30 hover:text-white/60">
+          <X className="w-4 h-4" />
+        </button>
+      </div>
+
+      {/* Screenshot */}
+      {review.screenshot && (
+        <div className="mb-3 rounded-lg overflow-hidden border border-white/[0.06]">
+          <img
+            src={`data:image/png;base64,${review.screenshot}`}
+            alt="Form screenshot"
+            className="w-full h-auto"
+          />
+        </div>
+      )}
+
+      {/* Filled fields */}
+      <div className="space-y-1.5 mb-3">
+        <p className="text-[10px] uppercase tracking-wider text-white/30 font-medium">
+          {language === "hi" ? "भरे गए फ़ील्ड" : "Filled Fields"}
+        </p>
+        {Object.entries(review.fields).map(([key, value]) => (
+          <div
+            key={key}
+            className="flex justify-between items-center text-[11px] py-1 px-2 rounded bg-white/[0.03]"
+          >
+            <span className="text-white/40 capitalize">
+              {key.replace(/_/g, " ")}
+            </span>
+            <span className="text-white/80 font-mono text-[10px]">{value}</span>
+          </div>
+        ))}
+      </div>
+
+      {/* Captcha input */}
+      <div className="mb-3">
+        <label className="block text-[10px] uppercase tracking-wider text-white/30 font-medium mb-1">
+          {language === "hi" ? "कैप्चा दर्ज करें" : "Enter Captcha"}
+        </label>
+        <input
+          type="text"
+          value={captchaValue}
+          onChange={(e) => setCaptchaValue(e.target.value)}
+          placeholder={language === "hi" ? "कैप्चा कोड" : "Captcha code"}
+          className="w-full px-3 py-2 rounded-lg bg-white/[0.05] border border-white/[0.1] text-sm text-white placeholder:text-white/20 outline-none focus:border-purple-500/30"
+        />
+      </div>
+
+      {/* Confirm / Cancel buttons */}
+      <div className="flex gap-2">
+        <button
+          onClick={onCancel}
+          className="flex-1 py-2 rounded-lg text-xs font-medium bg-white/[0.05] text-white/60 hover:bg-white/[0.1] transition-colors flex items-center justify-center gap-1.5"
+        >
+          <XCircle className="w-3.5 h-3.5" />
+          {language === "hi" ? "रद्द करें" : "Cancel"}
+        </button>
+        <button
+          onClick={() => onConfirm(captchaValue)}
+          disabled={!captchaValue.trim()}
+          className={cn(
+            "flex-1 py-2 rounded-lg text-xs font-medium transition-colors flex items-center justify-center gap-1.5",
+            captchaValue.trim()
+              ? "bg-green-500/20 text-green-300 hover:bg-green-500/30 border border-green-500/20"
+              : "bg-white/[0.03] text-white/20 cursor-not-allowed"
+          )}
+        >
+          <CheckCircle2 className="w-3.5 h-3.5" />
+          {language === "hi" ? "पुष्टि करें" : "Confirm & Submit"}
+        </button>
+      </div>
+    </motion.div>
+  );
+}
+
 /* ── Control bar ─────────────────────────────────────── */
 
 function CustomControlBar({
@@ -43,6 +157,7 @@ function CustomControlBar({
   language: SupportedLanguage;
 }) {
   const { localParticipant } = useLocalParticipant();
+  const room = useRoomContext();
   const { send: sendChat, chatMessages } = useChat();
   const [micEnabled, setMicEnabled] = useState(true);
   const [chatOpen, setChatOpen] = useState(false);
@@ -53,6 +168,79 @@ function CustomControlBar({
   // Fast Apply state — just tracks whether we've sent the message
   const [fastApplySent, setFastApplySent] = useState(false);
   const savedRefsRef = useRef<Set<string>>(new Set());
+
+  // HITL Review state — received from agent via data channel
+  const [reviewData, setReviewData] = useState<ReviewData | null>(null);
+
+  // Listen for data channel messages from the agent (HITL review)
+  useEffect(() => {
+    if (!room) return;
+
+    const handleDataReceived = (
+      payload: Uint8Array,
+      participant: unknown,
+      kind: unknown,
+      topic?: string
+    ) => {
+      if (topic !== "adhikaar-review") return;
+
+      try {
+        const text = new TextDecoder().decode(payload);
+        const data = JSON.parse(text) as ReviewData;
+        if (data.type === "REVIEW_REQUEST") {
+          setReviewData(data);
+          setChatOpen(true); // Ensure chat panel is visible
+        }
+      } catch (err) {
+        console.warn("Failed to parse review data from data channel:", err);
+      }
+    };
+
+    room.on("dataReceived", handleDataReceived);
+    return () => {
+      room.off("dataReceived", handleDataReceived);
+    };
+  }, [room]);
+
+  const handleReviewConfirm = async (captcha: string) => {
+    if (!reviewData) return;
+
+    try {
+      // Write confirmation via the API route
+      await fetch("/api/automate/confirm", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          sessionId: reviewData.sessionId,
+          action: "submit",
+          captcha,
+        }),
+      });
+    } catch (err) {
+      console.error("Failed to send confirmation:", err);
+    }
+
+    setReviewData(null);
+  };
+
+  const handleReviewCancel = async () => {
+    if (!reviewData) return;
+
+    try {
+      await fetch("/api/automate/confirm", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          sessionId: reviewData.sessionId,
+          action: "cancel",
+        }),
+      });
+    } catch (err) {
+      console.error("Failed to send cancellation:", err);
+    }
+
+    setReviewData(null);
+  };
 
   // Watch agent messages for successful application references
   useEffect(() => {
@@ -123,9 +311,13 @@ function CustomControlBar({
     if (fastApplySent) return;
     setFastApplySent(true);
 
+    // Demo shortcut — uses sample data to demonstrate the fast apply flow.
+    // In production, this would be pre-filled from a real citizen profile (e.g. from Aadhaar scan).
     const msg =
-      "FAST APPLY: My name is Rajesh Kumar, I am a 34 year old male farmer from Uttar Pradesh. " +
+      "FAST APPLY: My name is Ramesh Kumar, I am a 35 year old male farmer from Uttar Pradesh. " +
       "My annual income is around 80000 rupees, I belong to OBC category, I have a BPL card and I own land. " +
+      "My Aadhaar is 1234 5678 9012, father's name is Shri Suresh Kumar, date of birth 1991-03-15, mobile 9876543210. " +
+      "District Lucknow, Block Mohanlalganj, Village Rampur. Bank State Bank of India, account 32145678901, IFSC SBIN0001234. " +
       "Please find the best scheme for me and apply right away.";
 
     try {
@@ -139,6 +331,18 @@ function CustomControlBar({
 
   return (
     <div className="relative w-full max-w-md space-y-3 px-2">
+      {/* HITL Review Panel overlay */}
+      <AnimatePresence>
+        {reviewData && (
+          <VoiceReviewPanel
+            review={reviewData}
+            language={language}
+            onConfirm={handleReviewConfirm}
+            onCancel={handleReviewCancel}
+          />
+        )}
+      </AnimatePresence>
+
       {/* Chat panel */}
       <AnimatePresence>
         {chatOpen && (
@@ -269,24 +473,26 @@ function CustomControlBar({
           <MessageSquareText className="w-5 h-5" />
         </button>
 
-        {/* Fast Apply */}
-        <button
-          onClick={handleFastApply}
-          disabled={fastApplySent}
-          title={language === "hi" ? "त्वरित आवेदन" : "Quick Demo Apply"}
-          className={cn(
-            "w-12 h-12 rounded-full flex items-center justify-center transition-all border",
-            fastApplySent
-              ? "bg-green-500/15 border-green-500/20 text-green-400"
-              : "bg-gradient-to-br from-purple-500/10 to-indigo-500/10 border-purple-500/20 text-purple-400 hover:from-purple-500/20 hover:to-indigo-500/20"
-          )}
-        >
-          {fastApplySent ? (
-            <CheckCircle2 className="w-5 h-5" />
-          ) : (
-            <Zap className="w-5 h-5" />
-          )}
-        </button>
+        {/* Fast Apply — dev/demo only */}
+        {process.env.NODE_ENV === "development" && (
+          <button
+            onClick={handleFastApply}
+            disabled={fastApplySent}
+            title={language === "hi" ? "त्वरित आवेदन (डेमो)" : "Quick Demo Apply (Dev)"}
+            className={cn(
+              "w-12 h-12 rounded-full flex items-center justify-center transition-all border",
+              fastApplySent
+                ? "bg-green-500/15 border-green-500/20 text-green-400"
+                : "bg-gradient-to-br from-purple-500/10 to-indigo-500/10 border-purple-500/20 text-purple-400 hover:from-purple-500/20 hover:to-indigo-500/20"
+            )}
+          >
+            {fastApplySent ? (
+              <CheckCircle2 className="w-5 h-5" />
+            ) : (
+              <Zap className="w-5 h-5" />
+            )}
+          </button>
+        )}
 
         <button
           onClick={onDisconnect}
