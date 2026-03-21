@@ -1,20 +1,43 @@
-FROM python:3.12-slim-bookworm
+# syntax=docker/dockerfile:1
+ARG PYTHON_VERSION=3.12
+FROM ghcr.io/astral-sh/uv:python${PYTHON_VERSION}-bookworm-slim AS base
 
-# Playwright system deps
+ENV PYTHONUNBUFFERED=1
+
+FROM base AS deps
+
+WORKDIR /app
+
+COPY pyproject.toml uv.lock ./
+
+RUN uv sync --frozen --no-install-project
+
+FROM deps AS builder
+
+WORKDIR /app
+
+COPY . .
+
+RUN uv sync --frozen --no-install-project
+RUN uv pip install --system --no-cache-dir playwright
+RUN playwright install --with-deps chromium
+
+FROM base AS runtime
+
+WORKDIR /app
+
+ENV NODE_ENV=production
+
 RUN apt-get update && apt-get install -y --no-install-recommends \
     libnss3 libatk1.0-0 libatk-bridge2.0-0 libcups2 libdrm2 \
     libxkbcommon0 libxcomposite1 libxdamage1 libxrandr2 libgbm1 \
     libpango-1.0-0 libcairo2 libasound2 libxshmfence1 \
     && rm -rf /var/lib/apt/lists/*
 
-WORKDIR /app
+COPY --from=builder /app/.venv /app/.venv
 
-# Copy source FIRST (setuptools needs src/ to find packages)
-COPY pyproject.toml ./
-COPY src/ ./src/
+ENV PATH="/app/.venv/bin:$PATH"
 
-# Install Python deps (src/ must exist for pip install to find packages)
-RUN pip install --no-cache-dir . && \
-    playwright install chromium
+EXPOSE 8080
 
-CMD ["python", "src/agent.py", "start"]
+CMD ["python", "-m", "livekit.agents.cli", "run-app"]

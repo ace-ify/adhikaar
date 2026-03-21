@@ -156,8 +156,6 @@ LiveKit Cloud handles agent hosting — no server management needed.
 1. **Install LiveKit CLI**
    ```bash
    winget install LiveKit.LiveKitCLI
-   # or
-   npm install -g livekit-cli
    ```
 
 2. **Authenticate**
@@ -165,15 +163,16 @@ LiveKit Cloud handles agent hosting — no server management needed.
    lk cloud auth
    ```
 
-3. **Deploy Agent**
+3. **Create & Deploy Agent**
    ```bash
    cd agent
-   lk agent deploy --name adhikaar-agent
+   lk agent create
+   lk agent deploy
    ```
 
-4. **Configure Environment Variables**
-   ```
-   GOOGLE_API_KEY=your_gemini_api_key
+4. **Add Secrets**
+   ```bash
+   lk agent secrets set GOOGLE_API_KEY=your_gemini_api_key
    ```
 
 **LiveKit Cloud Free Tier:**

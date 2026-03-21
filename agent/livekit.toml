@@ -1,0 +1,6 @@
+# LiveKit Cloud Agent Configuration
+# https://docs.livekit.io/
+
+[agent]
+name = "adhikaar-agent"
+description = "India's AI Welfare Copilot - Voice Agent"
