@@ -1,11 +1,30 @@
+# Render.com Deployment Configuration
+# Deploys the LiveKit voice agent as a background worker
+#
+# Setup:
+# 1. Create a new Web Service on Render.com
+# 2. Connect your GitHub repo
+# 3. Set the root directory to "agent"
+# 4. Use the following settings:
+#    - Runtime: Docker
+#    - Plan: Free
+#    - Instance Type: Starter (Free tier: 512MB RAM)
+#
+# Environment Variables (set in Render dashboard):
+# - LIVEKIT_URL: wss://your-livekit-instance.livekit.cloud
+# - LIVEKIT_API_KEY: your_livekit_api_key
+# - LIVEKIT_API_SECRET: your_livekit_api_secret
+# - GOOGLE_API_KEY: your_gemini_api_key
+
 services:
   - type: worker
     name: adhikaar-voice-agent
     runtime: docker
     repo: https://github.com/<your-username>/adhikaar
-    dockerfilePath: ./agent/Dockerfile
+    dockerfilePath: ./Dockerfile
     dockerContext: ./agent
     plan: free
+    region: oregon
     envVars:
       - key: LIVEKIT_URL
         sync: false

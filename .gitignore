@@ -45,3 +45,9 @@ build/
 # Misc
 *.log
 npm-debug.log*
+
+# Ruff
+.ruff_cache/
+
+# Docker
+.docker/
