@@ -4,6 +4,8 @@ FROM ghcr.io/astral-sh/uv:python${PYTHON_VERSION}-bookworm-slim AS base
 
 ENV PYTHONUNBUFFERED=1
 
+# Cache bust: v2
+
 FROM base AS deps
 
 WORKDIR /app
@@ -17,6 +19,8 @@ FROM deps AS builder
 WORKDIR /app
 
 COPY . .
+
+RUN date > /app/.build-timestamp && cat /app/.build-timestamp
 
 RUN uv sync --frozen --no-install-project
 RUN uv pip install --system --no-cache-dir playwright
@@ -38,6 +42,9 @@ COPY --from=builder /app/.venv /app/.venv
 
 ENV PATH="/app/.venv/bin:$PATH"
 
+ARG BUILD_ID=3
+ENV BUILD_ID=${BUILD_ID}
+
 EXPOSE 8080
 
-CMD ["python", "-m", "livekit.agents.cli", "run-app"]
+CMD ["python", "src/agent.py"]

@@ -1,6 +1,7 @@
 # LiveKit Cloud Agent Entry Point
-# This module exports the agent function for LiveKit Cloud deployment
+# Starts the agent worker connected to LiveKit Cloud
 
-from agent.src.agent import adhikaar_session
+from agent.src.agent import server
+from livekit.agents import cli
 
-__all__ = ["adhikaar_session"]
+cli.run_app(server)

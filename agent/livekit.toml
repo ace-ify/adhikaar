@@ -1,6 +1,5 @@
-# LiveKit Cloud Agent Configuration
-# https://docs.livekit.io/
+[project]
+  subdomain = "adhikaar-crnb2gjx"
 
 [agent]
-name = "adhikaar-agent"
-description = "India's AI Welfare Copilot - Voice Agent"
+  id = "CA_mABojzM3mGuS"
