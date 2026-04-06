@@ -1,0 +1,27 @@
+// TigerGraph Schema for Adhikaar (अधिकार)
+// Focus: Feature 1 (Welfare Roadmap) and Feature 2 (Household Optimizer)
+
+CREATE GRAPH AdhikaarGraph ()
+
+CREATE SCHEMA_CHANGE JOB change_adhikaar FOR GRAPH AdhikaarGraph {
+  
+  // Vertices
+  ADD VERTEX Scheme (PRIMARY_ID id STRING, name STRING, name_hindi STRING, description STRING, amount FLOAT, category STRING, ministry STRING, portal_url STRING) WITH primary_id_as_attribute="true";
+  ADD VERTEX Document (PRIMARY_ID id STRING, name STRING) WITH primary_id_as_attribute="true";
+  ADD VERTEX Citizen (PRIMARY_ID id STRING, name STRING, state STRING, gender STRING, age INT, income FLOAT) WITH primary_id_as_attribute="true";
+  ADD VERTEX Family (PRIMARY_ID id STRING) WITH primary_id_as_attribute="true";
+  ADD VERTEX Requirement (PRIMARY_ID id STRING, name STRING, value STRING) WITH primary_id_as_attribute="true";
+
+  // Edges
+  ADD DIRECTED EDGE REQUIRES_DOCUMENT (FROM Scheme, TO Document) WITH REVERSE_EDGE="DOCUMENT_REQUIRED_BY";
+  ADD DIRECTED EDGE PROVIDES_DOCUMENT (FROM Scheme, TO Document) WITH REVERSE_EDGE="DOCUMENT_PROVIDED_BY";
+  ADD DIRECTED EDGE BELONGS_TO (FROM Citizen, TO Family) WITH REVERSE_EDGE="HAS_MEMBER";
+  ADD DIRECTED EDGE HAS_REQUIREMENT (FROM Scheme, TO Requirement) WITH REVERSE_EDGE="REQUIREMENT_OF";
+  ADD DIRECTED EDGE SATISFIES_REQUIREMENT (FROM Citizen, TO Requirement);
+  
+  // Feature 1: The Welfare Roadmap (Document Chaining)
+  // This edge connects documents that are prerequisites for getting other documents
+  ADD DIRECTED EDGE UNLOCKS (FROM Document, TO Document) WITH REVERSE_EDGE="UNLOCKED_BY";
+}
+
+RUN SCHEMA_CHANGE JOB change_adhikaar

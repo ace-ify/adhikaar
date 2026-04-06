@@ -12,8 +12,12 @@ import urllib.parse
 import urllib.request
 import urllib.error
 from pathlib import Path
-
 from dotenv import load_dotenv
+
+# Load environment variables FIRST before any LiveKit imports or CLI calls
+ENV_PATH = Path(__file__).parent.parent / ".env.local"
+load_dotenv(ENV_PATH)
+
 from livekit import agents, rtc
 from livekit.agents import (
     Agent,
@@ -27,8 +31,6 @@ from google.genai import types as genai_types
 from livekit.plugins import google, noise_cancellation, silero
 
 logger = logging.getLogger("adhikaar-agent")
-
-load_dotenv(".env.local")
 
 # myScheme.gov.in API key — optional but recommended for higher rate limits
 MYSCHEME_API_KEY = os.environ.get("MYSCHEME_API_KEY", "")
